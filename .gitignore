@@ -1,0 +1,40 @@
+# Terraform: plugins e arquivos locais de inicialização
+.terraform/
+
+# Estado e suas cópias: podem conter informações sensíveis
+*.tfstate
+*.tfstate.*
+.terraform.tfstate.lock.info
+
+# Valores locais das variáveis
+*.tfvars
+*.tfvars.json
+
+# Planos salvos: podem conter informações sensíveis
+*.tfplan
+tfplan
+
+# Logs de falhas do Terraform
+crash.log
+crash.*.log
+
+# Variáveis de ambiente e segredos locais
+.env
+.env.*
+!.env.example
+
+# Chaves e certificados privados
+*.pem
+*.key
+
+# Proteção caso a pasta SSH ou nossas chaves sejam copiadas ao projeto
+.ssh/
+atlas-dev
+lab-linux-azure
+id_rsa
+id_ed25519
+
+# Arquivos temporários de editores
+*.swp
+*.swo
+*~
