@@ -34,7 +34,11 @@ lab-linux-azure
 id_rsa
 id_ed25519
 
+# Relatórios locais de verificação da destruição
+verificacao_destroy_*/
+
 # Arquivos temporários de editores
 *.swp
 *.swo
 *~
+
