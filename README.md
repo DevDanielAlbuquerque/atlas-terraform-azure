@@ -2,9 +2,18 @@
 
 Laboratório de infraestrutura como código para praticar Azure, Linux, redes e fundamentos de operação de ambientes Cloud/SRE.
 
-Esta documentação descreve a **base inicial DEV**, anterior à refatoração: uma VM Ubuntu com acesso SSH por chave, rede segmentada e regras de segurança. A proposta é compreender cada recurso, validar seu comportamento e registrar a evolução do projeto.
+Esta documentação descreve a **base refatorada do PRD simulado**: uma VM Ubuntu com acesso SSH por chave, rede segmentada e regras de segurança. O código está organizado por responsabilidade, com nomenclatura `api` para os recursos da aplicação.
 
 > Ambiente de estudo com cenário empresarial simulado. Esta versão não representa uma aplicação em produção nem implementa alta disponibilidade.
+
+## Evolução e validação
+
+- **Base DEV:** preservada na [tag v0.1.0](https://github.com/DevDanielAlbuquerque/atlas-terraform-azure/tree/v0.1.0), incluindo a documentação original.
+- **Encerramento do DEV:** Terraform confirmou `17 destroyed` antes da criação do novo ambiente.
+- **PRD simulado — 22/11/2026:** execução local concluiu `Apply complete! Resources: 17 added, 0 changed, 0 destroyed.` O acesso SSH à nova VM foi testado com sucesso pelo autor.
+- **Refatoração:** `main.tf` foi distribuído entre arquivos de configuração, rede, segurança e computação. Os nomes passaram de `app` para `api`, e o ambiente padrão passou de `dev` para `prd`.
+
+O nome PRD representa uma simulação de estudo; não implica prontidão para produção. A tag preserva código e documentação, não discos, dados ou o estado da infraestrutura.
 
 ## Estado do projeto
 
@@ -15,7 +24,7 @@ Esta documentação descreve a **base inicial DEV**, anterior à refatoração: 
 | ASG da API e associação da NIC | Implementados |
 | IP público Standard estático e NIC | Implementados |
 | VM Ubuntu 22.04 LTS Gen2 | Implementada |
-| Acesso SSH pela origem autorizada | Validado durante o laboratório |
+| Acesso SSH pela origem autorizada | Validado no PRD simulado em 22/11/2026 |
 | Bloqueio de SSH por outra rede | Teste prático pendente |
 | VM/serviço PostgreSQL e consulta ao banco | Ainda não implementados |
 | API C#, monitoramento e backups | Etapas futuras |
@@ -24,25 +33,25 @@ O estado acima registra o progresso do laboratório, não uma verificação em t
 
 ## Arquitetura
 
-Configuração padrão: projeto `atlas`, ambiente `dev`, região `eastus2`.
+Configuração padrão: projeto `atlas`, ambiente `prd`, região `eastus2`.
 
 ```mermaid
 flowchart TD
     ADMIN["Administrador: IPv4 público autorizado /32"]
-    subgraph RG["rg-atlas-dev"]
-        PIP["pip-atlas-dev-app: IP público Standard"]
-        ASG["asg-atlas-dev-api"]
-        subgraph VNET["vnet-atlas-dev — 10.20.0.0/16"]
-            subgraph APP["snet-atlas-dev-app — 10.20.2.0/24"]
-                NIC["nic-atlas-dev-app"]
-                VM["vm-atlas-dev-app — Ubuntu 22.04"]
+    subgraph RG["rg-atlas-prd"]
+        PIP["pip-atlas-prd-api: IP público Standard"]
+        ASG["asg-atlas-prd-api"]
+        subgraph VNET["vnet-atlas-prd — 10.20.0.0/16"]
+            subgraph APP["snet-atlas-prd-api — 10.20.2.0/24"]
+                NIC["nic-atlas-prd-api"]
+                VM["vm-atlas-prd-api — Ubuntu 22.04"]
             end
-            subgraph DATA["snet-atlas-dev-banco — 10.20.1.0/24"]
+            subgraph DATA["snet-atlas-prd-banco — 10.20.1.0/24"]
                 FUTURO["PostgreSQL: ainda não implantado"]
             end
         end
-        NSGAPP["nsg-atlas-dev-app"]
-        NSGDB["nsg-atlas-dev-banco"]
+        NSGAPP["nsg-atlas-prd-api"]
+        NSGDB["nsg-atlas-prd-banco"]
     end
     ADMIN -->|"SSH TCP 22"| PIP
     PIP --> NIC
@@ -89,7 +98,10 @@ A API e o PostgreSQL estão planejados para máquinas separadas. Somente a VM da
 
 | Arquivo | Conteúdo |
 |---|---|
-| [main.tf](main.tf) | Provider, tags e todos os recursos da base |
+| [providers.tf](providers.tf) | Versões do Terraform/provider, autenticação, prefixo e tags |
+| [rede.tf](rede.tf) | Grupo de recursos, VNet e sub-redes da API e do banco |
+| [seguranca.tf](seguranca.tf) | ASG, NSGs, regras e associações às sub-redes |
+| [computo.tf](computo.tf) | IP público, NIC, associação NIC–ASG e VM Linux |
 | [variables.tf](variables.tf) | Entradas, defaults e validação da origem SSH |
 | [.terraform.lock.hcl](.terraform.lock.hcl) | Versão selecionada e hashes do provider |
 | [.gitignore](.gitignore) | Exclusões de estado, arquivos locais e segredos |
@@ -101,10 +113,10 @@ Requisito declarado: Terraform **>= 1.5**, AzureRM **~> 4.0**. O lockfile consul
 | Variável | Padrão | Finalidade |
 |---|---|---|
 | `project` | `atlas` | Nome base |
-| `ambiente` | `dev` | Identificação do ambiente |
+| `ambiente` | `prd` | Identificação do ambiente |
 | `location` | `eastus2` | Região Azure |
 | `vnet_cidr` | `10.20.0.0/16` | Espaço da VNet |
-| `subnet_cidr_app` | `10.20.2.0/24` | Sub-rede da aplicação |
+| `subnet_cidr_api` | `10.20.2.0/24` | Sub-rede da aplicação |
 | `subnet_cidr_banco` | `10.20.1.0/24` | Sub-rede do banco |
 | `ssh_allowed_cidr` | Sem default | IPv4 público autorizado, com /32 |
 | `vm_size` | `Standard_D2als_v6` | Tamanho da VM |
@@ -115,12 +127,14 @@ A validação atual de SSH verifica um CIDR válido terminado em `/32`; ela aind
 
 ## Como executar
 
+Enquanto o Pull Request não for integrado, os comandos abaixo selecionam a branch `refactor/organizacao-prd`, que contém esta versão.
+
 As instruções abaixo consideram Linux/WSL, Azure CLI, Git e Terraform instalados, além de uma assinatura com permissões e quota disponíveis.
 
 ### 1. Obter o projeto e selecionar a assinatura
 
 ```bash
-git clone https://github.com/DevDanielAlbuquerque/atlas-terraform-azure.git
+git clone --branch refactor/organizacao-prd https://github.com/DevDanielAlbuquerque/atlas-terraform-azure.git
 cd atlas-terraform-azure
 
 az login
@@ -151,6 +165,8 @@ ssh-keygen -t rsa -b 4096 -f ~/.ssh/atlas-dev
 
 Defina uma passphrase para proteger a chave privada. O arquivo `atlas-dev.pub` é lido pelo Terraform; `atlas-dev` permanece no computador e é usado pelo cliente SSH. Não versione a chave privada.
 
+O nome `atlas-dev` foi mantido por compatibilidade com a chave já usada no laboratório. O nome do arquivo não limita seu uso a um ambiente. Se escolher outro nome, ajuste `ssh_public_key_path` e o comando SSH.
+
 ### 3. Informar os valores locais
 
 Crie um arquivo `terraform.tfvars` na pasta do projeto:
@@ -168,6 +184,7 @@ O endereço acima é fictício e não autoriza sua conexão real. O arquivo `ter
 
 ```bash
 terraform init
+terraform fmt -check
 terraform validate
 terraform plan
 terraform apply
@@ -179,7 +196,7 @@ Se você já administra um ambiente existente, utilize o diretório e o estado c
 
 ### 5. Conectar à VM
 
-Consulte o IP público do recurso `pip-atlas-dev-app` no portal. O repositório ainda não declara outputs.
+Consulte o IP público do recurso `pip-atlas-prd-api` no portal. O repositório ainda não declara outputs.
 
 ```bash
 ssh -i ~/.ssh/atlas-dev azureuser@<IP_PUBLICO_DA_VM>
@@ -191,7 +208,7 @@ Se o IP público da sua conexão mudar, atualize `ssh_allowed_cidr`, revise o pl
 
 ## Validação do laboratório
 
-O provisionamento e o acesso SSH autorizado foram realizados durante o estudo. Isso não comprova o bloqueio de todas as demais origens.
+O autor confirmou o provisionamento dos 17 recursos e o acesso SSH autorizado à VM `vm-atlas-prd-api` em 22/11/2026. O `terraform validate` também retornou sucesso na preparação da refatoração. Isso não comprova o bloqueio de todas as demais origens.
 
 Teste pendente no Windows/PowerShell:
 
@@ -230,8 +247,10 @@ Revise o que será removido e preserve dados necessários antes de confirmar. Ap
 ## Limitações e próximos passos
 
 - [ ] Concluir o teste de bloqueio SSH por outra origem.
-- [ ] Revisar a refatoração por responsabilidade e a nomenclatura `app` / `api`.
-- [ ] Planejar a transição para um único ambiente PRD simulado.
+- [x] Organizar os arquivos por responsabilidade e padronizar a nomenclatura `api`.
+- [x] Remover o DEV e provisionar um único ambiente PRD simulado.
+- [x] Validar o acesso SSH autorizado à nova VM.
+- [ ] Integrar a refatoração e a documentação à `main` por Pull Request.
 - [ ] Adicionar outputs úteis.
 - [ ] Implantar PostgreSQL e uma API simples em C#.
 - [ ] Implementar métricas, logs e alertas.
