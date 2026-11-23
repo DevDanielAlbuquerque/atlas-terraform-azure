@@ -12,6 +12,8 @@ Esta documentação descreve a **base refatorada do PRD simulado**: uma VM Ubunt
 - **Encerramento do DEV:** Terraform confirmou `17 destroyed` antes da criação do novo ambiente.
 - **PRD simulado — 22/11/2026:** execução local concluiu `Apply complete! Resources: 17 added, 0 changed, 0 destroyed.` O acesso SSH à nova VM foi testado com sucesso pelo autor.
 - **Refatoração:** `main.tf` foi distribuído entre arquivos de configuração, rede, segurança e computação. Os nomes passaram de `app` para `api`, e o ambiente padrão passou de `dev` para `prd`.
+- **Backend remoto — 23/11/2026:** State migrado para Azure Blob Storage com autenticação Microsoft Entra ID, permissões RBAC, versionamento de blobs e bloqueio de State. Leitura dos 17 recursos validada no notebook; `terraform plan` final no desktop retornou `No changes`.
+- **Segurança — 23/11/2026:** preservação da identidade gerenciada `SystemAssigned` da VM e suporte a múltiplas origens IPv4 `/32` para SSH.
 
 O nome PRD representa uma simulação de estudo; não implica prontidão para produção. A tag preserva código e documentação, não discos, dados ou o estado da infraestrutura.
 
@@ -23,10 +25,11 @@ O nome PRD representa uma simulação de estudo; não implica prontidão para pr
 | NSGs, regras e associações às sub-redes | Implementados |
 | ASG da API e associação da NIC | Implementados |
 | IP público Standard estático e NIC | Implementados |
-| VM Ubuntu 22.04 LTS Gen2 | Implementada |
-| Acesso SSH pela origem autorizada | Validado no PRD simulado em 22/11/2026 |
+| VM Ubuntu 22.04 LTS Gen2 com identidade gerenciada `SystemAssigned` | Implementada |
+| Acesso SSH por chave e origens IPv4 `/32` autorizadas | Acesso inicial validado em 22/11; regra com múltiplas origens aplicada em 23/11 |
 | Bloqueio de SSH por outra rede | Teste prático pendente |
 | VM/serviço PostgreSQL e consulta ao banco | Ainda não implementados |
+| Backend remoto Azure Blob Storage | Implementado e validado em 23/11/2026 |
 | API C#, monitoramento e backups | Etapas futuras |
 
 O estado acima registra o progresso do laboratório, não uma verificação em tempo real dos recursos na Azure.
@@ -37,7 +40,7 @@ Configuração padrão: projeto `atlas`, ambiente `prd`, região `eastus2`.
 
 ```mermaid
 flowchart TD
-    ADMIN["Administrador: IPv4 público autorizado /32"]
+    ADMIN["Administrador: IPv4 públicos autorizados /32"]
     subgraph RG["rg-atlas-prd"]
         PIP["pip-atlas-prd-api: IP público Standard"]
         ASG["asg-atlas-prd-api"]
@@ -70,7 +73,7 @@ Todas as regras abaixo são de entrada, usam TCP e permitem qualquer porta de or
 
 | NSG | Prioridade | Origem | Destino | Porta de destino | Ação |
 |---|---:|---|---|---:|---|
-| Aplicação | 100 | `ssh_allowed_cidr` | Sub-rede da aplicação | 22 | Allow |
+| Aplicação | 100 | `ssh_allowed_cidrs` (lista IPv4 `/32`) | Sub-rede da aplicação | 22 | Allow |
 | Aplicação | 200 | Qualquer origem | Sub-rede da aplicação | 22 | Deny |
 | Banco | 100 | ASG da API | Sub-rede do banco | 5432 | Allow |
 | Banco | 200 | Qualquer origem | Sub-rede do banco | 5432 | Deny |
@@ -86,19 +89,34 @@ O ASG identifica interfaces de rede; a permissão é definida pelo NSG. Acesso d
 - **Terraform:** infraestrutura declarativa, revisão do plano antes de aplicar e possibilidade de reproduzir o laboratório.
 - **Duas sub-redes:** separação entre aplicação e futuro banco.
 - **ASG para a API:** regras baseadas na associação da NIC ao grupo, sem fixar o IP privado da aplicação.
-- **SSH limitado a um IPv4 /32:** administração por uma origem autorizada, com autenticação por chave.
+- **SSH limitado a IPv4s `/32` autorizados:** administração por lista de origens restritas, com autenticação por chave.
 - **IP público na NIC:** caminho direto para administração neste laboratório, sem VPN ou Bastion nesta etapa.
 - **VM `Standard_D2als_v6`:** tamanho configurável; disponibilidade, quota e custo devem ser conferidos na assinatura de destino.
 - **Disco `Standard_LRS` e cache `ReadWrite`:** configuração do disco do sistema operacional nesta versão.
-- **Estado local:** adequado à etapa inicial de estudo; colaboração e automação exigirão discutir armazenamento remoto, acesso e recuperação do estado.
+- **State remoto:** backend `azurerm` em Azure Blob Storage, com Microsoft Entra ID, RBAC, versionamento de blobs e bloqueio durante operações Terraform.
+- **Identidade gerenciada:** VM com `SystemAssigned`, declarada em `computo.tf`.
 
 A API e o PostgreSQL estão planejados para máquinas separadas. Somente a VM da aplicação está declarada nesta versão.
+
+## Gerenciamento remoto do Terraform State
+
+Desde 23/11/2026, o State do ambiente PRD simulado é armazenado no Azure Blob Storage, em container privado, por meio do backend `azurerm` definido em [`backend.tf`](backend.tf).
+
+- **Autenticação:** Microsoft Entra ID (`use_azuread_auth = true`), sem chave compartilhada do Storage Account.
+- **Autorização:** RBAC com acesso aos dados do container.
+- **Proteção:** versionamento de blobs e bloqueio de State durante operações Terraform.
+- **Uso em duas máquinas:** desktop e notebook consultam o mesmo State remoto; o código é sincronizado separadamente pelo GitHub.
+
+O State não é versionado no Git. Para acessar esse backend em outra máquina, é necessário autenticar-se na assinatura correta e possuir permissões adequadas no armazenamento. O versionamento não substitui uma estratégia de backup e recuperação.
+
+A migração inicial do State local já foi concluída. **Em novas clonagens, use `terraform init`, não `terraform init -migrate-state`.**
 
 ## Arquivos
 
 | Arquivo | Conteúdo |
 |---|---|
 | [providers.tf](providers.tf) | Versões do Terraform/provider, autenticação, prefixo e tags |
+| [backend.tf](backend.tf) | Configuração do State remoto no Azure Blob Storage |
 | [rede.tf](rede.tf) | Grupo de recursos, VNet e sub-redes da API e do banco |
 | [seguranca.tf](seguranca.tf) | ASG, NSGs, regras e associações às sub-redes |
 | [computo.tf](computo.tf) | IP público, NIC, associação NIC–ASG e VM Linux |
@@ -118,23 +136,23 @@ Requisito declarado: Terraform **>= 1.5**, AzureRM **~> 4.0**. O lockfile consul
 | `vnet_cidr` | `10.20.0.0/16` | Espaço da VNet |
 | `subnet_cidr_api` | `10.20.2.0/24` | Sub-rede da aplicação |
 | `subnet_cidr_banco` | `10.20.1.0/24` | Sub-rede do banco |
-| `ssh_allowed_cidr` | Sem default | IPv4 público autorizado, com /32 |
+| `ssh_allowed_cidrs` | Sem default | Lista de IPv4s públicos autorizados, cada um com `/32` |
 | `vm_size` | `Standard_D2als_v6` | Tamanho da VM |
 | `admin_username` | `azureuser` | Usuário Linux |
 | `ssh_public_key_path` | `~/.ssh/atlas-dev.pub` | Arquivo da chave pública |
 
-A validação atual de SSH verifica um CIDR válido terminado em `/32`; ela ainda não verifica explicitamente que o endereço é IPv4 público. Forneça o IPv4 público de saída da sua conexão, não o endereço privado do computador.
+A validação de SSH exige uma lista não vazia de endereços com formato IPv4 `/32`; ela não garante que cada endereço seja público ou esteja sob seu controle. Informe somente IPs públicos de saída de redes confiáveis, não endereços privados dos computadores.
 
 ## Como executar
 
-Enquanto o Pull Request não for integrado, os comandos abaixo selecionam a branch `refactor/organizacao-prd`, que contém esta versão.
+A versão documentada está na branch `main`.
 
 As instruções abaixo consideram Linux/WSL, Azure CLI, Git e Terraform instalados, além de uma assinatura com permissões e quota disponíveis.
 
 ### 1. Obter o projeto e selecionar a assinatura
 
 ```bash
-git clone --branch refactor/organizacao-prd https://github.com/DevDanielAlbuquerque/atlas-terraform-azure.git
+git clone https://github.com/DevDanielAlbuquerque/atlas-terraform-azure.git
 cd atlas-terraform-azure
 
 az login
@@ -155,7 +173,7 @@ Confira primeiro se o destino já existe:
 ls ~/.ssh
 ```
 
-Para um novo par, sem sobrescrever uma chave existente:
+Para criar uma infraestrutura nova, gere um par de chaves sem sobrescrever uma chave existente:
 
 ```bash
 mkdir -p ~/.ssh
@@ -165,6 +183,8 @@ ssh-keygen -t rsa -b 4096 -f ~/.ssh/atlas-dev
 
 Defina uma passphrase para proteger a chave privada. O arquivo `atlas-dev.pub` é lido pelo Terraform; `atlas-dev` permanece no computador e é usado pelo cliente SSH. Não versione a chave privada.
 
+**Para administrar a VM já existente a partir de outro computador**, utilize a mesma chave pública cadastrada na VM. Gerar outra chave pública e usá-la no Terraform pode propor alteração da configuração de acesso. A chave privada correspondente é necessária para efetuar SSH; copiar apenas a chave pública não concede acesso.
+
 O nome `atlas-dev` foi mantido por compatibilidade com a chave já usada no laboratório. O nome do arquivo não limita seu uso a um ambiente. Se escolher outro nome, ajuste `ssh_public_key_path` e o comando SSH.
 
 ### 3. Informar os valores locais
@@ -173,12 +193,15 @@ Crie um arquivo `terraform.tfvars` na pasta do projeto:
 
 ```hcl
 # EXEMPLO: substitua pelo IPv4 público real da sua conexão.
-ssh_allowed_cidr = "203.0.113.10/32"
+ssh_allowed_cidrs = [
+  "203.0.113.10/32",
+  "198.51.100.20/32"
+]
 
 ssh_public_key_path = "~/.ssh/atlas-dev.pub"
 ```
 
-O endereço acima é fictício e não autoriza sua conexão real. O arquivo `terraform.tfvars` é ignorado pelo Git. As outras entradas podem ser sobrescritas nele conforme necessário.
+Os endereços acima são fictícios e não autorizam suas conexões reais. O arquivo `terraform.tfvars` é ignorado pelo Git. As outras entradas podem ser sobrescritas nele conforme necessário.
 
 ### 4. Validar, planejar e aplicar
 
@@ -192,7 +215,7 @@ terraform apply
 
 Revise recursos, nomes, região, origem SSH e possíveis destruições antes de confirmar o apply. Um plano bem-sucedido não garante capacidade ou quota disponível na Azure.
 
-Se você já administra um ambiente existente, utilize o diretório e o estado correspondentes. Clonar este repositório **não recupera o estado** nem faz o Terraform reconhecer automaticamente recursos já criados.
+Se você já administra um ambiente existente, utilize o diretório e o estado correspondentes. Neste projeto, após autenticação e `terraform init`, o Terraform acessa o State remoto existente; **não crie outro State local para os mesmos recursos**.
 
 ### 5. Conectar à VM
 
@@ -204,7 +227,7 @@ ssh -i ~/.ssh/atlas-dev azureuser@<IP_PUBLICO_DA_VM>
 
 Verifique a identidade do servidor no primeiro acesso. Quando solicitada, informe a passphrase da chave privada.
 
-Se o IP público da sua conexão mudar, atualize `ssh_allowed_cidr`, revise o plano e aplique a alteração.
+Se o IP público da sua conexão mudar, atualize `ssh_allowed_cidrs`, revise o plano e aplique a alteração. Cada rede pode utilizar um IP público diferente.
 
 ## Validação do laboratório
 
@@ -233,7 +256,7 @@ Este laboratório utiliza recursos cobrados. O custo depende da região, tamanho
 
 Desalocar a VM não elimina os custos de discos e do IP público estático. Confira o Cost Management e a calculadora Azure antes de reproduzir o ambiente.
 
-O estado local não deve entrar no Git, mas precisa ser preservado de forma segura. Ignorá-lo no versionamento não equivale a fazer backup.
+O State remoto não deve entrar no Git e precisa ser protegido por RBAC, versionamento e uma estratégia de recuperação. Ignorar arquivos locais no versionamento não equivale a fazer backup.
 
 Para encerrar o laboratório, no diretório com o estado correto:
 
@@ -250,12 +273,13 @@ Revise o que será removido e preserve dados necessários antes de confirmar. Ap
 - [x] Organizar os arquivos por responsabilidade e padronizar a nomenclatura `api`.
 - [x] Remover o DEV e provisionar um único ambiente PRD simulado.
 - [x] Validar o acesso SSH autorizado à nova VM.
-- [ ] Integrar a refatoração e a documentação à `main` por Pull Request.
+- [x] Integrar a refatoração e a documentação à `main`.
 - [ ] Adicionar outputs úteis.
 - [ ] Implantar PostgreSQL e uma API simples em C#.
 - [ ] Implementar métricas, logs e alertas.
 - [ ] Implementar backup e testar restauração.
-- [ ] Avaliar estado remoto e validações automatizadas.
+- [x] Migrar o Terraform State para Azure Blob Storage e validar acesso a partir de dois computadores.
+- [ ] Implementar validações automatizadas com GitHub Actions.
 
 A transição DEV → PRD não consiste apenas em trocar uma variável: nomes podem provocar substituição de recursos. Renomear identificadores Terraform também requer tratar sua relação com o estado. Mover blocos entre arquivos na mesma pasta, mantendo identificadores e valores, é uma reorganização sem mudança esperada na infraestrutura.
 
