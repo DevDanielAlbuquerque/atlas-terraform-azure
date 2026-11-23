@@ -42,6 +42,10 @@ resource "azurerm_linux_virtual_machine" "vm_api" {
   admin_username      = var.admin_username
   tags                = local.tags
 
+  identity {
+    type = "SystemAssigned"
+  }
+
   network_interface_ids = [
     azurerm_network_interface.nic_api.id,
   ]
