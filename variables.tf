@@ -34,15 +34,25 @@ variable "subnet_cidr_banco" {
   default     = "10.20.1.0/24"
 }
 
-variable "ssh_allowed_cidr" {
-  description = "IP público autorizado a acessar a VM por SSH, no formato IP/32. Informe no terraform.tfvars."
-  type        = string
+variable "ssh_allowed_cidrs" {
+  description = "Lista de IPs públicos autorizados a acessar a VM por SSH, no formato IPv4/32."
+  type        = list(string)
 
   validation {
-    condition     = can(cidrhost(var.ssh_allowed_cidr, 0)) && endswith(var.ssh_allowed_cidr, "/32")
-    error_message = "Use um IP único no formato x.x.x.x/32."
+    condition = (
+      length(var.ssh_allowed_cidrs) > 0 &&
+      alltrue([
+        for cidr in var.ssh_allowed_cidrs :
+        can(cidrhost(cidr, 0)) &&
+        endswith(cidr, "/32") &&
+        can(regex("^[0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+/32$", cidr))
+      ])
+    )
+
+    error_message = "Informe pelo menos um endereço IPv4 válido no formato x.x.x.x/32."
   }
 }
+
 variable "vm_size" {
   description = "Tamanho (SKU) da máquina virtual."
   type        = string

@@ -93,8 +93,8 @@ resource "azurerm_network_security_rule" "regra_permitir_ssh_admin" {
   access    = "Allow"
   protocol  = "Tcp"
 
-  source_address_prefix = var.ssh_allowed_cidr
-  source_port_range     = "*"
+  source_address_prefixes = var.ssh_allowed_cidrs
+  source_port_range       = "*"
 
   destination_address_prefix = var.subnet_cidr_api
   destination_port_range     = "22"
