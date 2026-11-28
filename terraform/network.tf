@@ -25,7 +25,7 @@ resource "azurerm_network_interface" "nic_api" {
   }
 }
 
-# Interface de rede
+# Rede virtual
 
 resource "azurerm_virtual_network" "vnet" {
   name                = "vnet-${local.prefixo}"

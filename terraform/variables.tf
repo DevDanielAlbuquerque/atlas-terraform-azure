@@ -7,13 +7,13 @@ variable "project" {
 }
 
 variable "ambiente" {
-  description = "Ambiente de implantação."
+  description = "Ambiente do projeto"
   type        = string
   default     = "prd"
 
   validation {
-    condition     = contains(["dev", "hml", "prd"], var.ambiente)
-    error_message = "O ambiente deve ser dev, hml ou prd."
+    condition     = var.ambiente == "prd"
+    error_message = "O Atlas suporta apenas o ambiente prd."
   }
 }
 

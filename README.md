@@ -166,7 +166,9 @@ Requisito declarado: Terraform **>= 1.5**, AzureRM **~> 4.0**. O lockfile consul
 | `admin_username` | `azureuser` | Usuário Linux |
 | `ssh_public_key_path` | `~/.ssh/atlas-dev.pub` | Arquivo da chave pública |
 
-A variável `ambiente` aceita apenas `dev`, `hml` ou `prd`. Os três CIDRs de rede possuem validação de formato, mas ainda não há validação de sobreposição ou pertencimento das subnets à VNet.
+A variável `ambiente` aceita exclusivamente `prd`, mantendo a configuração consistente com o backend remoto. O Atlas utiliza um único ambiente de estudo.
+
+Os três CIDRs de rede possuem validação de formato, mas ainda não há validação de sobreposição ou pertencimento das subnets à VNet.
 
 A validação de SSH exige uma lista não vazia de endereços com formato IPv4 `/32`; ela não garante que cada endereço seja público ou esteja sob seu controle. Informe somente IPs públicos de saída de redes confiáveis, não endereços privados dos computadores.
 
@@ -300,10 +302,10 @@ Revise o que será removido e preserve dados necessários antes de confirmar. Ap
 - [x] Organizar os arquivos por responsabilidade e padronizar a nomenclatura `api`.
 - [x] Remover o DEV e provisionar um único ambiente PRD simulado.
 - [x] Validar o acesso SSH autorizado à nova VM.
-- [x] Integrar a refatoração e a documentação à `main`.
+- [x] Integrar a refatoração inicial de 22/11/2026 à `main`.
 - [x] Separar Terraform e Ansible e reorganizar os arquivos Terraform.
 - [x] Validar a refatoração estrutural sem alterações na infraestrutura.
-- [ ] Integrar a refatoração de 27/11/2026 à `main`.
+- [ ] Integrar a refatoração estrutural de 27/11/2026 à `main`.
 - [ ] Implementar inventário e playbooks Ansible para configuração das VMs.
 - [ ] Adicionar outputs úteis.
 - [ ] Implantar PostgreSQL e uma API simples em C#.
