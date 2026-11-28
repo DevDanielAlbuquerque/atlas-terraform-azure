@@ -15,6 +15,8 @@ Esta documentação descreve a **base refatorada do PRD simulado**: uma VM Ubunt
 - **Backend remoto — 23/11/2026:** State migrado para Azure Blob Storage com autenticação Microsoft Entra ID, permissões RBAC, versionamento de blobs e bloqueio de State. Leitura dos 17 recursos validada no notebook; `terraform plan` final no desktop retornou `No changes`.
 - **Segurança — 23/11/2026:** preservação da identidade gerenciada `SystemAssigned` da VM e suporte a múltiplas origens IPv4 `/32` para SSH.
 
+- **Refatoração estrutural — 27/11/2026:** branch `refactor/atlas-structure`, separação dos diretórios Terraform e Ansible, reorganização dos arquivos, comentários simplificados e novas validações de entradas. O plano retornou `No changes`; a comparação do state foi concluída pelo autor, sem necessidade de novo apply.
+
 O nome PRD representa uma simulação de estudo; não implica prontidão para produção. A tag preserva código e documentação, não discos, dados ou o estado da infraestrutura.
 
 ## Estado do projeto
@@ -94,13 +96,13 @@ O ASG identifica interfaces de rede; a permissão é definida pelo NSG. Acesso d
 - **VM `Standard_D2als_v6`:** tamanho configurável; disponibilidade, quota e custo devem ser conferidos na assinatura de destino.
 - **Disco `Standard_LRS` e cache `ReadWrite`:** configuração do disco do sistema operacional nesta versão.
 - **State remoto:** backend `azurerm` em Azure Blob Storage, com Microsoft Entra ID, RBAC, versionamento de blobs e bloqueio durante operações Terraform.
-- **Identidade gerenciada:** VM com `SystemAssigned`, declarada em `computo.tf`.
+- **Identidade gerenciada:** VM com `SystemAssigned`, declarada em `terraform/compute.tf`.
 
 A API e o PostgreSQL estão planejados para máquinas separadas. Somente a VM da aplicação está declarada nesta versão.
 
 ## Gerenciamento remoto do Terraform State
 
-Desde 23/11/2026, o State do ambiente PRD simulado é armazenado no Azure Blob Storage, em container privado, por meio do backend `azurerm` definido em [`backend.tf`](backend.tf).
+Desde 23/11/2026, o State do ambiente PRD simulado é armazenado no Azure Blob Storage, em container privado, por meio do backend `azurerm` definido em [`backend.tf`](terraform/backend.tf).
 
 - **Autenticação:** Microsoft Entra ID (`use_azuread_auth = true`), sem chave compartilhada do Storage Account.
 - **Autorização:** RBAC com acesso aos dados do container.
@@ -111,17 +113,40 @@ O State não é versionado no Git. Para acessar esse backend em outra máquina, 
 
 A migração inicial do State local já foi concluída. **Em novas clonagens, use `terraform init`, não `terraform init -migrate-state`.**
 
-## Arquivos
+## Estrutura do projeto
 
-| Arquivo | Conteúdo |
+```text
+atlas-terraform-azure/
+├── ansible/                  # Configuração de sistemas (planejada)
+├── terraform/
+│   ├── .terraform.lock.hcl
+│   ├── backend.tf
+│   ├── compute.tf
+│   ├── locals.tf
+│   ├── network.tf
+│   ├── providers.tf
+│   ├── resource_group.tf
+│   ├── security.tf
+│   ├── variables.tf
+│   └── versions.tf
+├── .gitignore
+└── README.md
+```
+
+O diretório `ansible/` está reservado para a próxima etapa. Enquanto estiver vazio, não será registrado pelo Git. Os arquivos locais `terraform/terraform.tfvars` e `terraform/.terraform/` são ignorados.
+
+| Arquivo | Responsabilidade |
 |---|---|
-| [providers.tf](providers.tf) | Versões do Terraform/provider, autenticação, prefixo e tags |
-| [backend.tf](backend.tf) | Configuração do State remoto no Azure Blob Storage |
-| [rede.tf](rede.tf) | Grupo de recursos, VNet e sub-redes da API e do banco |
-| [seguranca.tf](seguranca.tf) | ASG, NSGs, regras e associações às sub-redes |
-| [computo.tf](computo.tf) | IP público, NIC, associação NIC–ASG e VM Linux |
-| [variables.tf](variables.tf) | Entradas, defaults e validação da origem SSH |
-| [.terraform.lock.hcl](.terraform.lock.hcl) | Versão selecionada e hashes do provider |
+| [versions.tf](terraform/versions.tf) | Requisitos do Terraform e provider |
+| [providers.tf](terraform/providers.tf) | Configuração do AzureRM |
+| [backend.tf](terraform/backend.tf) | State remoto no Azure Blob Storage |
+| [locals.tf](terraform/locals.tf) | Prefixo e tags comuns |
+| [resource_group.tf](terraform/resource_group.tf) | Grupo de recursos |
+| [network.tf](terraform/network.tf) | VNet, subnets, IP público e NIC |
+| [security.tf](terraform/security.tf) | ASG, NSGs, regras e associações |
+| [compute.tf](terraform/compute.tf) | VM Linux, identidade, disco e autenticação SSH |
+| [variables.tf](terraform/variables.tf) | Entradas, defaults e validações |
+| [.terraform.lock.hcl](terraform/.terraform.lock.hcl) | Versão selecionada e hashes do provider |
 | [.gitignore](.gitignore) | Exclusões de estado, arquivos locais e segredos |
 
 Requisito declarado: Terraform **>= 1.5**, AzureRM **~> 4.0**. O lockfile consultado seleciona AzureRM **4.81.0**. Atualizações do provider devem ser revisadas, mesmo dentro da série 4.
@@ -141,11 +166,15 @@ Requisito declarado: Terraform **>= 1.5**, AzureRM **~> 4.0**. O lockfile consul
 | `admin_username` | `azureuser` | Usuário Linux |
 | `ssh_public_key_path` | `~/.ssh/atlas-dev.pub` | Arquivo da chave pública |
 
+A variável `ambiente` aceita exclusivamente `prd`, mantendo a configuração consistente com o backend remoto. O Atlas utiliza um único ambiente de estudo.
+
+Os três CIDRs de rede possuem validação de formato, mas ainda não há validação de sobreposição ou pertencimento das subnets à VNet.
+
 A validação de SSH exige uma lista não vazia de endereços com formato IPv4 `/32`; ela não garante que cada endereço seja público ou esteja sob seu controle. Informe somente IPs públicos de saída de redes confiáveis, não endereços privados dos computadores.
 
 ## Como executar
 
-A versão documentada está na branch `main`.
+Esta revisão foi preparada na branch `refactor/atlas-structure`; a integração à `main` ainda está pendente.
 
 As instruções abaixo consideram Linux/WSL, Azure CLI, Git e Terraform instalados, além de uma assinatura com permissões e quota disponíveis.
 
@@ -154,6 +183,7 @@ As instruções abaixo consideram Linux/WSL, Azure CLI, Git e Terraform instalad
 ```bash
 git clone https://github.com/DevDanielAlbuquerque/atlas-terraform-azure.git
 cd atlas-terraform-azure
+cd terraform
 
 az login
 az account set --subscription "<ID_DA_ASSINATURA>"
@@ -189,7 +219,7 @@ O nome `atlas-dev` foi mantido por compatibilidade com a chave já usada no labo
 
 ### 3. Informar os valores locais
 
-Crie um arquivo `terraform.tfvars` na pasta do projeto:
+Crie o arquivo `terraform.tfvars` dentro do diretório `terraform/`:
 
 ```hcl
 # EXEMPLO: substitua pelo IPv4 público real da sua conexão.
@@ -203,19 +233,18 @@ ssh_public_key_path = "~/.ssh/atlas-dev.pub"
 
 Os endereços acima são fictícios e não autorizam suas conexões reais. O arquivo `terraform.tfvars` é ignorado pelo Git. As outras entradas podem ser sobrescritas nele conforme necessário.
 
-### 4. Validar, planejar e aplicar
+### 4. Validar e planejar
 
 ```bash
 terraform init
 terraform fmt -check
 terraform validate
 terraform plan
-terraform apply
 ```
 
-Revise recursos, nomes, região, origem SSH e possíveis destruições antes de confirmar o apply. Um plano bem-sucedido não garante capacidade ou quota disponível na Azure.
+Execute `terraform apply` somente quando houver uma mudança intencional e autorizada, após revisar recursos, nomes, região, origem SSH e possíveis destruições. Na refatoração estrutural, o plano sem mudanças dispensou o apply. Um plano bem-sucedido não garante capacidade ou quota disponível na Azure.
 
-Se você já administra um ambiente existente, utilize o diretório e o estado correspondentes. Neste projeto, após autenticação e `terraform init`, o Terraform acessa o State remoto existente; **não crie outro State local para os mesmos recursos**.
+Se você já administra um ambiente existente, utilize o diretório e o estado correspondentes. O backend declarado aponta para o armazenamento do autor. Para reproduzir o laboratório de forma independente, provisione seu próprio backend, ajuste `backend.tf` e utilize um state exclusivo. Neste projeto, após autenticação e `terraform init`, o Terraform acessa o State remoto existente; **não crie outro State local para os mesmos recursos**.
 
 ### 5. Conectar à VM
 
@@ -231,7 +260,7 @@ Se o IP público da sua conexão mudar, atualize `ssh_allowed_cidrs`, revise o p
 
 ## Validação do laboratório
 
-O autor confirmou o provisionamento dos 17 recursos e o acesso SSH autorizado à VM `vm-atlas-prd-api` em 22/11/2026. O `terraform validate` também retornou sucesso na preparação da refatoração. Isso não comprova o bloqueio de todas as demais origens.
+O autor confirmou o provisionamento dos 17 recursos e o acesso SSH autorizado à VM `vm-atlas-prd-api` em 22/11/2026. O `terraform validate` também retornou sucesso na preparação da refatoração. Em 27/11/2026, após a reorganização dos arquivos, o plano retornou `No changes` e o autor informou a conclusão da comparação dos endereços do state. Isso não comprova o bloqueio de todas as demais origens.
 
 Teste pendente no Windows/PowerShell:
 
@@ -258,7 +287,7 @@ Desalocar a VM não elimina os custos de discos e do IP público estático. Conf
 
 O State remoto não deve entrar no Git e precisa ser protegido por RBAC, versionamento e uma estratégia de recuperação. Ignorar arquivos locais no versionamento não equivale a fazer backup.
 
-Para encerrar o laboratório, no diretório com o estado correto:
+Para encerrar intencionalmente o laboratório, no diretório `terraform/` com o estado correto:
 
 ```bash
 terraform plan -destroy
@@ -273,7 +302,11 @@ Revise o que será removido e preserve dados necessários antes de confirmar. Ap
 - [x] Organizar os arquivos por responsabilidade e padronizar a nomenclatura `api`.
 - [x] Remover o DEV e provisionar um único ambiente PRD simulado.
 - [x] Validar o acesso SSH autorizado à nova VM.
-- [x] Integrar a refatoração e a documentação à `main`.
+- [x] Integrar a refatoração inicial de 22/11/2026 à `main`.
+- [x] Separar Terraform e Ansible e reorganizar os arquivos Terraform.
+- [x] Validar a refatoração estrutural sem alterações na infraestrutura.
+- [ ] Integrar a refatoração estrutural de 27/11/2026 à `main`.
+- [ ] Implementar inventário e playbooks Ansible para configuração das VMs.
 - [ ] Adicionar outputs úteis.
 - [ ] Implantar PostgreSQL e uma API simples em C#.
 - [ ] Implementar métricas, logs e alertas.

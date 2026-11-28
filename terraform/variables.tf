@@ -1,41 +1,67 @@
-# ============================================================
-# VARIÁVEIS = os "botões" do projeto.
-# Mudou o valor aqui (ou no terraform.tfvars), mudou em tudo.
-# ============================================================
+# Projeto e ambiente
+
 variable "project" {
-  description = "Nome base do projeto, usado na composição dos nomes dos recursos."
+  description = "Nome base do projeto."
   type        = string
   default     = "atlas"
 }
+
 variable "ambiente" {
-  description = "Ambiente de implantação, por exemplo dev, hml ou prd."
+  description = "Ambiente do projeto"
   type        = string
   default     = "prd"
+
+  validation {
+    condition     = var.ambiente == "prd"
+    error_message = "O Atlas suporta apenas o ambiente prd."
+  }
 }
+
 variable "location" {
-  description = "Região do Azure onde os recursos serão criados."
+  description = "Região de implantação dos recursos."
   type        = string
   default     = "eastus2"
 }
+
+# Rede
 
 variable "vnet_cidr" {
   description = "Faixa de endereços da VNet."
   type        = string
   default     = "10.20.0.0/16"
-}
-variable "subnet_cidr_api" {
-  description = "Faixa de endereços da sub-rede da API. Deve estar dentro de vnet_cidr."
-  type        = string
-  default     = "10.20.2.0/24"
-}
-variable "subnet_cidr_banco" {
-  description = "Faixa de endereços da sub-rede do banco. Deve estar dentro de vnet_cidr e não sobrepor subnet_cidr_api."
-  type        = string
-  default     = "10.20.1.0/24"
+
+  validation {
+    condition     = can(cidrhost(var.vnet_cidr, 0))
+    error_message = "Informe um CIDR válido para a VNet."
+  }
 }
 
+variable "subnet_cidr_api" {
+  description = "Faixa de endereços da subnet da API."
+  type        = string
+  default     = "10.20.2.0/24"
+
+  validation {
+    condition     = can(cidrhost(var.subnet_cidr_api, 0))
+    error_message = "Informe um CIDR válido para a subnet da API."
+  }
+}
+
+variable "subnet_cidr_banco" {
+  description = "Faixa de endereços da subnet do banco."
+  type        = string
+  default     = "10.20.1.0/24"
+
+  validation {
+    condition     = can(cidrhost(var.subnet_cidr_banco, 0))
+    error_message = "Informe um CIDR válido para a subnet do banco."
+  }
+}
+
+# Segurança
+
 variable "ssh_allowed_cidrs" {
-  description = "Lista de IPs públicos autorizados a acessar a VM por SSH, no formato IPv4/32."
+  description = "Lista de endereços IPv4 autorizados via SSH."
   type        = list(string)
 
   validation {
@@ -44,7 +70,6 @@ variable "ssh_allowed_cidrs" {
       alltrue([
         for cidr in var.ssh_allowed_cidrs :
         can(cidrhost(cidr, 0)) &&
-        endswith(cidr, "/32") &&
         can(regex("^[0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+/32$", cidr))
       ])
     )
@@ -53,20 +78,22 @@ variable "ssh_allowed_cidrs" {
   }
 }
 
+# Computação
+
 variable "vm_size" {
-  description = "Tamanho (SKU) da máquina virtual."
+  description = "SKU da máquina virtual."
   type        = string
   default     = "Standard_D2als_v6"
 }
 
 variable "admin_username" {
-  description = "Usuário administrador criado na VM."
+  description = "Usuário administrador da VM."
   type        = string
   default     = "azureuser"
 }
 
 variable "ssh_public_key_path" {
-  description = "Caminho da chave SSH pública (.pub) autorizada na VM. Informe no terraform.tfvars. Aceita ~ no início do caminho."
+  description = "Caminho da chave SSH pública."
   type        = string
   default     = "~/.ssh/atlas-dev.pub"
 }
